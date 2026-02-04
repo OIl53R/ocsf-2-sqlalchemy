@@ -1,0 +1,36 @@
+{# Template for generating an association table for primitive array attributes #}
+
+class {{ class_name }}(OcsfBase):
+    """Association table for {{ parent_entity }}.{{ attribute_name }}.
+
+    Stores primitive array values in a normalized one-to-many relationship.
+    """
+    __tablename__ = "{{ table_name }}"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    {{ parent_fk_name }}: Mapped[int] = mapped_column(
+        ForeignKey("{{ parent_table }}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    value: Mapped[{% if nullable %}Optional[{{ python_type }}]{% else %}{{ python_type }}{% endif %}] = mapped_column(
+        {{ sqlalchemy_type }},
+        nullable={{ nullable }},
+{% if description %}
+        comment="{{ description | truncate(200) | replace('"', '\\"') }}",
+{% endif %}
+    )
+    position: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Order in the array",
+    )
+
+    # Relationship back to parent
+    {{ parent_relationship }}: Mapped["{{ parent_class }}"] = relationship(
+        "{{ parent_class }}",
+        back_populates="{{ attribute_name }}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<{{ class_name }}(id={self.id}, value={self.value})>"

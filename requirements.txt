@@ -1,0 +1,19 @@
+# Core
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+ocsf-lib>=0.8.0
+jinja2>=3.1.0
+pydantic>=2.12.0,<3.0.0
+datamodel-code-generator>=0.25.0
+
+# Reference (for pattern study, not runtime dependency)
+py-ocsf-models>=0.8.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Development
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.0.0

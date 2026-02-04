@@ -1,0 +1,76 @@
+{# Template for generating an OCSF object SQLAlchemy model #}
+
+class {{ class_name }}({% if parent_class %}{{ parent_class }}{% else %}OcsfBase, OcsfTimestampMixin{% endif %}):
+    """{{ caption }}.
+
+    {{ description | wordwrap(72) | indent(4) }}
+    {% if inheritance_chain | length > 1 %}
+
+    Inheritance chain: {{ inheritance_chain | join(' -> ') }}
+    {% endif %}
+    """
+    __tablename__ = "{{ table_name }}"
+{% if extends %}
+
+    # Joined table inheritance from {{ extends }}
+    id: Mapped[int] = mapped_column(
+        ForeignKey("{{ parent_table }}.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    __mapper_args__ = {"polymorphic_identity": "{{ polymorphic_identity }}"}
+{% else %}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+{% if is_polymorphic_base %}
+    _type: Mapped[str] = mapped_column(String(100), nullable=False)
+    __mapper_args__ = {
+        "polymorphic_on": "_type",
+        "polymorphic_identity": "{{ polymorphic_identity }}",
+    }
+{% endif %}
+{% endif %}
+
+{% if columns %}
+    # Attributes
+{% for col in columns %}
+{% if col.is_foreign_key %}
+    {{ col.name }}: Mapped[{% if col.nullable %}Optional[int]{% else %}int{% endif %}] = mapped_column(
+        ForeignKey("{{ col.references_table }}.id", ondelete="SET NULL"),
+{% if col.description %}
+        comment="{{ col.description | truncate(200) | replace('"', '\\"') }}",
+{% endif %}
+        nullable={{ col.nullable }},
+    )
+{% else %}
+    {{ col.name }}: Mapped[{% if col.nullable %}Optional[{{ col.python_type }}]{% else %}{{ col.python_type }}{% endif %}] = mapped_column(
+        {{ col.sqlalchemy_type }},
+{% if col.description %}
+        comment="{{ col.description | truncate(200) | replace('"', '\\"') }}",
+{% endif %}
+        nullable={{ col.nullable }},
+    )
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if relationships %}
+    # Relationships
+{% for rel in relationships %}
+{% if rel.is_array %}
+    {{ rel.name }}: Mapped[List["{{ rel.target_class }}"]] = relationship(
+        "{{ rel.target_class }}",
+        secondary="{{ rel.association_table }}",
+        back_populates="{{ rel.back_populates }}",
+    )
+{% else %}
+    {{ rel.name }}: Mapped[Optional["{{ rel.target_class }}"]] = relationship(
+        "{{ rel.target_class }}",
+        foreign_keys=[{{ rel.fk_column }}],
+        back_populates="{{ rel.back_populates }}",
+    )
+{% endif %}
+{% endfor %}
+{% endif %}
+
+    def __repr__(self) -> str:
+        return f"<{{ class_name }}(id={self.id})>"

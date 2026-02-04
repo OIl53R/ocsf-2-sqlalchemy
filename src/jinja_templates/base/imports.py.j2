@@ -1,0 +1,37 @@
+{# Base imports template for generated SQLAlchemy models #}
+"""{{ description | default('Generated SQLAlchemy models from OCSF schema.') }}
+
+Auto-generated from OCSF schema version {{ schema_version }}.
+DO NOT EDIT MANUALLY.
+"""
+
+from datetime import datetime
+from typing import Optional, List
+
+from sqlalchemy import (
+    ForeignKey,
+    String,
+    Text,
+    Integer,
+    BigInteger,
+    Float,
+    Boolean,
+    DateTime,
+    LargeBinary,
+    Uuid,
+    Table,
+    Column,
+    func,
+)
+from sqlalchemy.dialects.postgresql import INET, CIDR
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+)
+{% if additional_imports %}
+{% for imp in additional_imports %}
+{{ imp }}
+{% endfor %}
+{% endif %}

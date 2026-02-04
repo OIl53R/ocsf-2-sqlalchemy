@@ -1,0 +1,30 @@
+{# Base class template for all OCSF models #}
+{% include 'base/imports.py.j2' %}
+
+
+class OcsfBase(DeclarativeBase):
+    """Base class for all OCSF SQLAlchemy models.
+
+    Provides:
+    - Common table arguments
+    - Standard timestamp columns
+    - PostgreSQL schema support
+    """
+    pass
+
+
+class OcsfTimestampMixin:
+    """Mixin providing standard timestamp columns.
+
+    All OCSF tables include created_at and updated_at for audit purposes.
+    """
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        onupdate=func.now(),
+        nullable=True,
+    )
