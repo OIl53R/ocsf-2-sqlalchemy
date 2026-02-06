@@ -42,7 +42,8 @@ python main.py generate --output ./generated_models
 
 ```
 generated_models/
-├── base.py                    # OcsfBase class
+├── __init__.py                # Re-exports all classes via __all__ (697+ entries)
+├── base.py                    # OcsfBase, OcsfTimestampMixin
 ├── base_models/               # Object models (device, user, process, etc.)
 │   ├── __init__.py
 │   ├── device.py
@@ -53,15 +54,33 @@ generated_models/
 │   ├── base_event.py
 │   ├── process_activity.py
 │   └── ...
-├── relations/                 # Association tables for arrays
+├── relations/                 # Association/primitive array tables
 │   ├── __init__.py
-│   └── ocsf_device_groups.py
-└── metadata/                  # Schema metadata tables
+│   ├── ocsf_device_groups.py
+│   └── ...
+└── metadata/                  # Schema metadata tables (one class per file)
     ├── __init__.py
-    └── tables.py
+    ├── objects.py
+    ├── attributes.py
+    ├── enums.py
+    ├── categories.py
+    └── event_classes.py
 ```
 
+Each generated file has precise, minimal imports — only the SQLAlchemy types and ORM features actually used by that file.
+
 ## Configuration
+
+### Filtered Generation
+
+Generate models for a single object and its dependency graph:
+
+```bash
+python main.py generate \
+    --core-object vulnerability \
+    --max-depth 3 \
+    --include-events
+```
 
 ### Custom Naming
 
@@ -111,6 +130,9 @@ print(f"Events: {len(analyzed.events)}")
 # Generate models
 generator = CodeGenerator(analyzer, "./output")
 generator.write_all()
+
+# Import generated models directly
+from generated_models import OcsfDevice, OcsfProcessActivity
 ```
 
 ## Testing
@@ -147,11 +169,12 @@ ruff check src/ tests/
 mypy src/
 ```
 
-## Schema Coverage
+## Schema Coverage (v1.8.0-dev)
 
 - **171 Objects**: device, user, process, file, network_endpoint, etc.
 - **84 Events**: process_activity, file_activity, network_activity, etc.
 - **8 Categories**: System, Network, IAM, Findings, Application, Discovery, Remediation, Unmanned Systems
+- **701 Generated Files**: base models, events, association tables, metadata
 
 ## License
 
