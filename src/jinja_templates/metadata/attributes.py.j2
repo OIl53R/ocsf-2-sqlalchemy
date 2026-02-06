@@ -1,0 +1,22 @@
+{# Template for OCSF metadata attributes table #}
+
+class OcsfMetadataAttributes(OcsfBase, OcsfTimestampMixin):
+    """Registry of OCSF attributes.
+
+    Stores metadata about each attribute definition.
+    """
+    __tablename__ = "ocsf_metadata_attributes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="Attribute name")
+    object_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="Parent object name")
+    caption: Mapped[str] = mapped_column(String(200), nullable=False, comment="Human-readable caption")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Full description")
+    ocsf_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="OCSF type (e.g., string_t)")
+    requirement: Mapped[str] = mapped_column(String(20), default="optional", comment="optional/required/recommended")
+    is_array: Mapped[bool] = mapped_column(Boolean, default=False, comment="Whether this is an array")
+    is_inherited: Mapped[bool] = mapped_column(Boolean, default=False, comment="Whether inherited from parent")
+    source_object: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="Object where originally defined")
+
+    def __repr__(self) -> str:
+        return f"<OcsfMetadataAttributes(name='{self.name}', object='{self.object_name}')>"

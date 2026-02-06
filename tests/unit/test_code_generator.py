@@ -89,10 +89,70 @@ class TestFileGeneration(TestCodeGenerator):
         assert len(relation_files) > 0
 
     def test_generates_metadata_tables(self, generator: CodeGenerator) -> None:
-        """Test generates metadata tables."""
+        """Test generates 5 individual metadata files."""
         files = generator.generate_all()
-        metadata_files = [f for f in files if str(f.path).startswith("metadata/")]
-        assert len(metadata_files) > 0
+        metadata_files = [
+            f for f in files
+            if str(f.path).startswith("metadata/") and f.path.name != "__init__.py"
+        ]
+        assert len(metadata_files) == 5
+        filenames = {f.path.name for f in metadata_files}
+        assert filenames == {
+            "objects.py", "attributes.py", "enums.py",
+            "categories.py", "event_classes.py",
+        }
+
+    def test_no_monolithic_metadata_tables_file(self, generator: CodeGenerator) -> None:
+        """Test that the old monolithic tables.py is NOT generated."""
+        files = generator.generate_all()
+        tables_files = [
+            f for f in files if f.path == Path("metadata") / "tables.py"
+        ]
+        assert len(tables_files) == 0
+
+    def test_metadata_files_have_ocsf_base_import(self, generator: CodeGenerator) -> None:
+        """Test each metadata file imports OcsfBase and OcsfTimestampMixin."""
+        files = generator.generate_all()
+        metadata_files = [
+            f for f in files
+            if str(f.path).startswith("metadata/") and f.path.name != "__init__.py"
+        ]
+        for f in metadata_files:
+            assert "from ..base import OcsfBase, OcsfTimestampMixin" in f.content, (
+                f"{f.path} missing OcsfBase import"
+            )
+
+    def test_association_table_has_minimal_imports(self, generator: CodeGenerator) -> None:
+        """Test association tables don't have bloated static imports."""
+        files = generator.generate_all()
+        assoc_files = [f for f in files if f.file_type == "association"]
+        assert len(assoc_files) > 0
+        for f in assoc_files:
+            # Extract import lines only (before class definition)
+            import_section = f.content.split("class")[0]
+            import_lines = [
+                line.strip() for line in import_section.splitlines()
+                if line.strip().startswith(("from ", "import "))
+            ]
+            import_text = "\n".join(import_lines)
+            assert "LargeBinary" not in import_text
+            assert "Table," not in import_text
+            assert "Column," not in import_text
+            assert "func" not in import_text
+
+    def test_main_init_exports_all_subpackages(self, generator: CodeGenerator) -> None:
+        """Test main __init__.py re-exports from all subpackages."""
+        files = generator.generate_all()
+        main_init = [f for f in files if f.path == Path("__init__.py")]
+        assert len(main_init) == 1
+        content = main_init[0].content
+        assert "from .base_models import *" in content
+        assert "from .events import *" in content
+        assert "from .relations import *" in content
+        assert "from .metadata import *" in content
+        assert "__all__" in content
+        # Should have many entries in __all__
+        assert content.count('"Ocsf') > 10
 
     def test_generates_init_files(self, generator: CodeGenerator) -> None:
         """Test generates __init__.py files."""

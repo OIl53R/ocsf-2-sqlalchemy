@@ -1,0 +1,17 @@
+{# Template for OCSF metadata categories table #}
+
+class OcsfMetadataCategories(OcsfBase, OcsfTimestampMixin):
+    """Registry of OCSF event categories.
+
+    Stores the 8 event categories and their metadata.
+    """
+    __tablename__ = "ocsf_metadata_categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, comment="Category name")
+    caption: Mapped[str] = mapped_column(String(100), nullable=False, comment="Human-readable caption")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Full description")
+    uid: Mapped[int] = mapped_column(Integer, nullable=False, unique=True, comment="Category UID")
+
+    def __repr__(self) -> str:
+        return f"<OcsfMetadataCategories(name='{self.name}', uid={self.uid})>"

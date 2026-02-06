@@ -1,28 +1,36 @@
 {# Template for generating an association table for object array relationships #}
 
-{{ table_name }} = Table(
-    "{{ table_name }}",
-    OcsfBase.metadata,
-    Column("id", Integer, primary_key=True),
-    Column(
-        "{{ parent_fk_name }}",
-        Integer,
+class {{ class_name }}(OcsfBase):
+    """Association table for {{ parent_entity }}.{{ attribute_name }}.
+
+    Links {{ parent_entity }} to {{ child_entity }} in a many-to-many relationship.
+    """
+    __tablename__ = "{{ table_name }}"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    {{ parent_fk_name }}: Mapped[int] = mapped_column(
         ForeignKey("{{ parent_table }}.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-    ),
-    Column(
-        "{{ child_fk_name }}",
-        Integer,
+    )
+    {{ child_fk_name }}: Mapped[int] = mapped_column(
         ForeignKey("{{ child_table }}.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-    ),
-    Column("position", Integer, nullable=True, comment="Order in the array"),
+    )
+    position: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Order in the array",
+    )
 {% if additional_columns %}
 {% for col in additional_columns %}
-    Column("{{ col.name }}", {{ col.type }}, nullable={{ col.nullable }}),
+    {{ col.name }}: Mapped[Optional[{{ col.python_type }}]] = mapped_column(
+        {{ col.type }},
+        nullable={{ col.nullable }},
+    )
 {% endfor %}
 {% endif %}
-    comment="{{ description | default('Association table for ' + parent_entity + '.' + attribute_name) }}",
-)
+
+    def __repr__(self) -> str:
+        return f"<{{ class_name }}(id={self.id})>"

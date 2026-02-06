@@ -56,6 +56,14 @@ class TestFullPipeline:
         assert (output_dir / "events" / "process_activity.py").exists()
         assert (output_dir / "events" / "base_event.py").exists()
 
+        # Verify individual metadata files exist (not monolithic tables.py)
+        assert (output_dir / "metadata" / "objects.py").exists()
+        assert (output_dir / "metadata" / "attributes.py").exists()
+        assert (output_dir / "metadata" / "enums.py").exists()
+        assert (output_dir / "metadata" / "categories.py").exists()
+        assert (output_dir / "metadata" / "event_classes.py").exists()
+        assert not (output_dir / "metadata" / "tables.py").exists()
+
     def test_all_generated_files_are_valid_python(
         self, schema_path: Path, output_dir: Path
     ) -> None:

@@ -67,6 +67,9 @@ class ImportInfo:
     - sqlalchemy_types: SQLAlchemy type names used in columns
     - needs_inet: Whether INET type from postgresql dialect is needed
     - needs_cidr: Whether CIDR type from postgresql dialect is needed
+    - needs_relationship: Whether relationship() ORM import is needed
+    - needs_timestamp_mixin: Whether OcsfTimestampMixin is needed
+    - needs_list: Whether List typing import is needed
     """
 
     parent_import: str | None = None
@@ -74,6 +77,9 @@ class ImportInfo:
     sqlalchemy_types: set[str] = field(default_factory=set)
     needs_inet: bool = False
     needs_cidr: bool = False
+    needs_relationship: bool = True
+    needs_timestamp_mixin: bool = True
+    needs_list: bool = True
 
 
 class CodeGenerator:
@@ -85,6 +91,20 @@ class CodeGenerator:
     - Association tables (relations/)
     - Metadata tables (metadata/)
     """
+
+    # Metadata table specifications for individual file generation
+    METADATA_TABLE_SPECS = [
+        {"template": "metadata/objects.py.j2", "filename": "objects.py",
+         "class_name": "OcsfMetadataObjects", "sa_types": {"String", "Text", "Integer"}},
+        {"template": "metadata/attributes.py.j2", "filename": "attributes.py",
+         "class_name": "OcsfMetadataAttributes", "sa_types": {"String", "Text", "Boolean"}},
+        {"template": "metadata/enums.py.j2", "filename": "enums.py",
+         "class_name": "OcsfMetadataEnums", "sa_types": {"String", "Text", "Integer"}},
+        {"template": "metadata/categories.py.j2", "filename": "categories.py",
+         "class_name": "OcsfMetadataCategories", "sa_types": {"String", "Text", "Integer"}},
+        {"template": "metadata/event_classes.py.j2", "filename": "event_classes.py",
+         "class_name": "OcsfMetadataEventClasses", "sa_types": {"String", "Text", "Integer"}},
+    ]
 
     # Map OCSF types to Python types for type hints
     PYTHON_TYPE_MAP = {
@@ -207,7 +227,7 @@ class CodeGenerator:
         files.extend(self._generate_association_tables(analyzed))
 
         # Generate metadata tables
-        files.append(self._generate_metadata_tables(analyzed))
+        files.extend(self._generate_metadata_tables(analyzed))
 
         # Generate __init__.py files
         files.extend(self._generate_init_files(analyzed))
@@ -329,12 +349,16 @@ class CodeGenerator:
         """Generate a table for primitive array values."""
         template = self.env.get_template("relations/primitive_array.py.j2")
 
-        class_name = self.naming.class_name(arr_info.association_table_name)
+        # Strip table prefix to avoid double Ocsf prefix in class name
+        raw_name = arr_info.association_table_name.removeprefix(self.naming.config.table_prefix)
+        class_name = self.naming.class_name(raw_name)
         parent_class = self.naming.class_name(arr_info.parent_entity)
         parent_table = self.naming.table_name(arr_info.parent_entity)
 
         # Get type mapping
-        sa_type = self.type_mapper.get_sqlalchemy_type(arr_info.element_type)
+        mapping = self.type_mapper.get_mapping(arr_info.element_type)
+        sa_type_full = mapping.get_column_definition()  # e.g. "String(17)" or "Text"
+        sa_type_base = mapping.sqlalchemy_type           # e.g. "String" or "Text"
         py_type = self.PYTHON_TYPE_MAP.get(arr_info.element_type, "str")
 
         content = template.render(
@@ -346,14 +370,38 @@ class CodeGenerator:
             parent_table=parent_table,
             parent_fk_name=f"{self.naming.to_snake_case(arr_info.parent_entity)}_id",
             parent_relationship=self.naming.to_snake_case(arr_info.parent_entity),
-            sqlalchemy_type=sa_type,
+            sqlalchemy_type=sa_type_full,
             python_type=py_type,
             nullable=True,
             description=f"Values for {arr_info.parent_entity}.{arr_info.attribute_name}",
         )
 
+        # Build precise imports for primitive array tables
+        imports = ImportInfo(
+            sqlalchemy_types={"ForeignKey", "Integer"},
+            needs_relationship=True,
+            needs_timestamp_mixin=False,
+            needs_list=False,
+        )
+
+        # Import the parent class for the relationship back-reference
+        parent_module = self._get_module_path(arr_info.parent_entity).lstrip(".")
+        if arr_info.parent_entity in analyzed.objects:
+            parent_import = f"from ..base_models.{parent_module} import {parent_class}"
+        else:
+            parent_import = f"from ..events.{parent_module} import {parent_class}"
+        imports.relationship_imports.append(parent_import)
+
+        if sa_type_base == "INET":
+            imports.needs_inet = True
+        elif sa_type_base == "CIDR":
+            imports.needs_cidr = True
+        else:
+            imports.sqlalchemy_types.add(sa_type_base)
+
         return self._add_file_header(
-            content, analyzed.version, "primitive_array", arr_info.association_table_name
+            content, analyzed.version, "primitive_array", arr_info.association_table_name,
+            imports=imports,
         )
 
     def _generate_object_association_table(
@@ -362,10 +410,16 @@ class CodeGenerator:
         """Generate an association table for object array relationships."""
         template = self.env.get_template("relations/association_table.py.j2")
 
+        # Strip table prefix to avoid double Ocsf prefix in class name
+        raw_name = arr_info.association_table_name.removeprefix(self.naming.config.table_prefix)
+        class_name = self.naming.class_name(raw_name)
+
         parent_table = self.naming.table_name(arr_info.parent_entity)
         child_table = self.naming.table_name(arr_info.element_type)
 
         content = template.render(
+            class_name=class_name,
+            child_entity=arr_info.element_type,
             table_name=arr_info.association_table_name,
             parent_entity=arr_info.parent_entity,
             attribute_name=arr_info.attribute_name,
@@ -376,83 +430,141 @@ class CodeGenerator:
             description=f"Association table for {arr_info.parent_entity}.{arr_info.attribute_name}",
         )
 
-        return self._add_file_header(
-            content, analyzed.version, "association", arr_info.association_table_name
+        # Build precise imports for association tables
+        imports = ImportInfo(
+            sqlalchemy_types={"ForeignKey", "Integer"},
+            needs_relationship=False,
+            needs_timestamp_mixin=False,
+            needs_list=False,
         )
 
-    def _generate_metadata_tables(self, analyzed: AnalyzedSchema) -> GeneratedFile:
-        """Generate metadata tables."""
-        template = self.env.get_template("metadata/metadata_tables.py.j2")
-        content = template.render(
-            schema_version=analyzed.version,
-            description="OCSF metadata tables for runtime documentation.",
+        return self._add_file_header(
+            content, analyzed.version, "association", arr_info.association_table_name,
+            imports=imports,
         )
-        return GeneratedFile(
-            path=Path("metadata") / "tables.py",
-            content=content,
-            file_type="metadata",
-        )
+
+    def _generate_metadata_tables(self, analyzed: AnalyzedSchema) -> list[GeneratedFile]:
+        """Generate individual metadata table files."""
+        files = []
+        for spec in self.METADATA_TABLE_SPECS:
+            template = self.env.get_template(spec["template"])
+            content = template.render(
+                schema_version=analyzed.version,
+            )
+
+            imports = ImportInfo(
+                sqlalchemy_types=set(spec["sa_types"]),
+                needs_relationship=False,
+                needs_timestamp_mixin=True,
+                needs_list=False,
+            )
+
+            files.append(GeneratedFile(
+                path=Path("metadata") / spec["filename"],
+                content=self._add_file_header(
+                    content, analyzed.version, "metadata", spec["class_name"],
+                    imports=imports,
+                ),
+                file_type="metadata",
+            ))
+        return files
 
     def _generate_init_files(self, analyzed: AnalyzedSchema) -> list[GeneratedFile]:
         """Generate __init__.py files for each package."""
         files = []
 
-        # Main __init__.py
-        main_imports = [
-            "from .base import OcsfBase, OcsfTimestampMixin",
-        ]
-        files.append(GeneratedFile(
-            path=Path("__init__.py"),
-            content=self._generate_init_content(main_imports, analyzed.version),
-            file_type="init",
-        ))
-
         # base_models/__init__.py
+        object_class_names = [
+            self.naming.class_name(name) for name in analyzed.object_tree.topological_order
+        ]
         object_imports = [
             f"from .{name} import {self.naming.class_name(name)}"
             for name in analyzed.object_tree.topological_order
         ]
         files.append(GeneratedFile(
             path=Path("base_models") / "__init__.py",
-            content=self._generate_init_content(object_imports, analyzed.version),
+            content=self._generate_init_content(
+                object_imports, analyzed.version, class_names=object_class_names
+            ),
             file_type="init",
         ))
 
         # events/__init__.py
+        event_class_names = [
+            self.naming.class_name(name) for name in analyzed.event_tree.topological_order
+        ]
         event_imports = [
             f"from .{name} import {self.naming.class_name(name)}"
             for name in analyzed.event_tree.topological_order
         ]
         files.append(GeneratedFile(
             path=Path("events") / "__init__.py",
-            content=self._generate_init_content(event_imports, analyzed.version),
+            content=self._generate_init_content(
+                event_imports, analyzed.version, class_names=event_class_names
+            ),
             file_type="init",
         ))
 
-        # relations/__init__.py
-        relation_imports = [
-            f"from .{arr.association_table_name} import *"
-            for arr in analyzed.array_attributes
-        ]
+        # relations/__init__.py — explicit imports (no import *)
+        relation_class_names = []
+        relation_imports = []
+        for arr in analyzed.array_attributes:
+            raw_name = arr.association_table_name.removeprefix(self.naming.config.table_prefix)
+            cls_name = self.naming.class_name(raw_name)
+            relation_class_names.append(cls_name)
+            relation_imports.append(
+                f"from .{arr.association_table_name} import {cls_name}"
+            )
         files.append(GeneratedFile(
             path=Path("relations") / "__init__.py",
-            content=self._generate_init_content(relation_imports, analyzed.version),
+            content=self._generate_init_content(
+                relation_imports, analyzed.version, class_names=relation_class_names
+            ),
             file_type="init",
         ))
 
-        # metadata/__init__.py
+        # metadata/__init__.py — individual file imports
+        metadata_class_names = [
+            "OcsfMetadataObjects",
+            "OcsfMetadataAttributes",
+            "OcsfMetadataEnums",
+            "OcsfMetadataCategories",
+            "OcsfMetadataEventClasses",
+        ]
         metadata_imports = [
-            "from .tables import (",
-            "    OcsfMetadataObjects,",
-            "    OcsfMetadataAttributes,",
-            "    OcsfMetadataEnums,",
-            "    OcsfMetadataCategories,",
-            "    OcsfMetadataEventClasses,",
-            ")",
+            "from .objects import OcsfMetadataObjects",
+            "from .attributes import OcsfMetadataAttributes",
+            "from .enums import OcsfMetadataEnums",
+            "from .categories import OcsfMetadataCategories",
+            "from .event_classes import OcsfMetadataEventClasses",
         ]
         files.append(GeneratedFile(
             path=Path("metadata") / "__init__.py",
-            content=self._generate_init_content(metadata_imports, analyzed.version),
+            content=self._generate_init_content(
+                metadata_imports, analyzed.version, class_names=metadata_class_names
+            ),
+            file_type="init",
+        ))
+
+        # Main __init__.py — comprehensive re-exports from all subpackages
+        all_class_names = ["OcsfBase", "OcsfTimestampMixin"]
+        all_class_names.extend(object_class_names)
+        all_class_names.extend(event_class_names)
+        all_class_names.extend(relation_class_names)
+        all_class_names.extend(metadata_class_names)
+
+        main_imports = [
+            "from .base import OcsfBase, OcsfTimestampMixin",
+            "from .base_models import *  # noqa: F403",
+            "from .events import *  # noqa: F403",
+            "from .relations import *  # noqa: F403",
+            "from .metadata import *  # noqa: F403",
+        ]
+        files.append(GeneratedFile(
+            path=Path("__init__.py"),
+            content=self._generate_init_content(
+                main_imports, analyzed.version, class_names=all_class_names
+            ),
             file_type="init",
         ))
 
@@ -786,7 +898,10 @@ class CodeGenerator:
         if imports is not None:
             # Dynamic imports based on actual usage
             # Base imports
-            header_lines.append("from ..base import OcsfBase, OcsfTimestampMixin")
+            if imports.needs_timestamp_mixin:
+                header_lines.append("from ..base import OcsfBase, OcsfTimestampMixin")
+            else:
+                header_lines.append("from ..base import OcsfBase")
 
             # Parent class import (for inheritance)
             if imports.parent_import:
@@ -797,7 +912,10 @@ class CodeGenerator:
                 header_lines.append(rel_import)
 
             # Typing imports
-            header_lines.append("from typing import Optional, List")
+            if imports.needs_list:
+                header_lines.append("from typing import Optional, List")
+            else:
+                header_lines.append("from typing import Optional")
 
             # SQLAlchemy core imports (only what's needed)
             if imports.sqlalchemy_types:
@@ -815,8 +933,11 @@ class CodeGenerator:
                     f"from sqlalchemy.dialects.postgresql import {', '.join(dialect_types)}"
                 )
 
-            # ORM imports (always needed for models)
-            header_lines.append("from sqlalchemy.orm import Mapped, mapped_column, relationship")
+            # ORM imports
+            orm_parts = ["Mapped", "mapped_column"]
+            if imports.needs_relationship:
+                orm_parts.append("relationship")
+            header_lines.append(f"from sqlalchemy.orm import {', '.join(orm_parts)}")
         else:
             # Fallback to static imports for backwards compatibility
             header_lines.extend([
@@ -835,12 +956,27 @@ class CodeGenerator:
         header_lines.append("")  # Second empty line
         return "\n".join(header_lines) + content
 
-    def _generate_init_content(self, imports: list[str], version: str) -> str:
-        """Generate __init__.py content."""
+    def _generate_init_content(
+        self, imports: list[str], version: str, class_names: list[str] | None = None
+    ) -> str:
+        """Generate __init__.py content.
+
+        Args:
+            imports: List of import statements
+            version: OCSF schema version
+            class_names: Optional list of class names for __all__ export
+        """
         header = f'''"""Generated OCSF models.
 
 Auto-generated from OCSF schema version {version}.
 """
 
 '''
-        return header + "\n".join(imports) + "\n"
+        parts = [header]
+
+        if class_names:
+            all_items = ",\n".join(f'    "{name}"' for name in class_names)
+            parts.append(f"__all__ = [\n{all_items},\n]\n\n")
+
+        parts.append("\n".join(imports) + "\n")
+        return "".join(parts)

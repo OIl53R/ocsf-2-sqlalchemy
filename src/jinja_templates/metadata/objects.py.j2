@@ -1,0 +1,20 @@
+{# Template for OCSF metadata objects table #}
+
+class OcsfMetadataObjects(OcsfBase, OcsfTimestampMixin):
+    """Registry of OCSF objects and event classes.
+
+    Stores metadata about each object/event type in the schema.
+    """
+    __tablename__ = "ocsf_metadata_objects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, comment="Object/event name")
+    caption: Mapped[str] = mapped_column(String(200), nullable=False, comment="Human-readable caption")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Full description")
+    object_type: Mapped[str] = mapped_column(String(50), nullable=False, comment="Type: object or event")
+    extends: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="Parent object/event name")
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="Event category")
+    uid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="Event class UID")
+
+    def __repr__(self) -> str:
+        return f"<OcsfMetadataObjects(name='{self.name}')>"

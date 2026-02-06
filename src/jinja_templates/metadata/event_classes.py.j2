@@ -1,0 +1,19 @@
+{# Template for OCSF metadata event classes table #}
+
+class OcsfMetadataEventClasses(OcsfBase, OcsfTimestampMixin):
+    """Registry of OCSF event classes.
+
+    Stores event class UIDs and their mapping to categories.
+    """
+    __tablename__ = "ocsf_metadata_event_classes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, comment="Event class name")
+    caption: Mapped[str] = mapped_column(String(200), nullable=False, comment="Human-readable caption")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Full description")
+    uid: Mapped[int] = mapped_column(Integer, nullable=False, unique=True, comment="Event class UID")
+    category_uid: Mapped[int] = mapped_column(Integer, nullable=False, comment="Parent category UID")
+    extends: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="Parent event class")
+
+    def __repr__(self) -> str:
+        return f"<OcsfMetadataEventClasses(name='{self.name}', uid={self.uid})>"

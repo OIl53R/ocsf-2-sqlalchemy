@@ -1,0 +1,17 @@
+{# Template for OCSF metadata enums table #}
+
+class OcsfMetadataEnums(OcsfBase, OcsfTimestampMixin):
+    """Registry of OCSF enum values.
+
+    Stores ID -> caption mappings for all enums.
+    """
+    __tablename__ = "ocsf_metadata_enums"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    enum_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="Enum name")
+    value_id: Mapped[int] = mapped_column(Integer, nullable=False, comment="Enum value ID")
+    caption: Mapped[str] = mapped_column(String(200), nullable=False, comment="Human-readable caption")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Value description")
+
+    def __repr__(self) -> str:
+        return f"<OcsfMetadataEnums(enum='{self.enum_name}', value_id={self.value_id})>"
